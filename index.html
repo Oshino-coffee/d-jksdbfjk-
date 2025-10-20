@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>推しの珈琲（オフライン対応）</title>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png" sizes="192x192">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#ffffff">
 <style>
   :root { --gap:12px; --btn:64px; --font:18px; }
@@ -31,7 +31,7 @@
   .pay input { font-size:24px; padding:8px; width:100%; }
   .keys { display:flex; flex-wrap:wrap; gap:8px; }
   .keys button { padding:10px 14px; border:1px solid #ddd; border-radius:8px; background:#fff; }
-  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap;  justify-content:flex-end;}
   .primary { background:#111; color:#fff; border:1px solid #111; }
   .danger { background:#b00020; color:#fff; border:1px solid #b00020; }
   .good { color:#0a7f2e; font-weight:600; }
@@ -40,7 +40,7 @@
   .chip { font-size:13px; padding:6px 10px; border:1px solid #ddd; border-radius:999px; background:#fff; }
   .footer { padding:12px; font-size:13px; color:#666; }
   dialog { border:none; border-radius:12px; padding:0; max-width:820px; width:90vw; }
-  .dlg { padding:16px; }
+  .dlg { padding:16px; position:relative; }
   .dlg h3 { margin:0 0 8px; }
   .form-row { display:grid; grid-template-columns: 1fr 120px 120px auto; gap:8px; align-items:center; margin-bottom:6px;}
   .form-row input { width:100%; padding:8px; font-size:16px; }
@@ -83,7 +83,7 @@
     <div class="pay" style="margin-top:12px;">
       <input id="cashInput" type="number" inputmode="numeric" placeholder="受取金額（円）">
       <div class="keys">
-        <button data-cash="100">+50</button> <button data-cash="100">+100</button>
+        <button data-cash="50">+50</button> <button data-cash="100">+100</button>
         <button data-cash="500">+500</button>
         <button data-cash="1000">+1,000</button>
         <button id="exact">ぴったり</button>
@@ -94,9 +94,9 @@
       <div id="change" class="right" style="font-size:22px;font-weight:700;">¥0</div>
     </div>
     <div class="actions" style="margin-top:12px;">
-      <button id="checkout" class="primary bigbtn">会計確定</button>
       <button id="clearCart" class="danger bigbtn">カート全クリア</button>
-    </div>
+      <button id="checkout" class="primary bigbtn">会計確定</button>
+</div>
     <div class="muted" style="margin-top:8px;">注文番号：<span id="orderNo">--</span></div>
   </section>
 </main>
@@ -115,14 +115,13 @@
 <dialog id="historyDlg">
   <div class="dlg">
     <h3>売上履歴</h3>
+    <button id="closeHistory" class="primary" style="position:absolute; right:12px; top:12px; padding:6px 10px;">×</button>
     <div class="muted" id="historySummary"></div>
     <table style="margin-top:8px; width:100%;">
       <thead><tr><th>時間</th><th>No</th><th>合計</th><th>明細</th><th>操作</th></tr></thead>
       <tbody id="historyBody"></tbody>
     </table>
-    <div style="margin-top:12px;">
-      <button id="closeHistory" class="primary">閉じる</button>
-    </div>
+    
   </div>
 
 </dialog>
@@ -135,11 +134,23 @@
       <thead><tr><th>商品</th><th class="right">数量</th><th class="right">売上</th></tr></thead>
       <tbody id="statsBody"></tbody>
     </table>
-    <div style="margin-top:12px; display:flex; justify-content:flex-end;">
-      <button id="closeStats" class="primary">閉じる</button>
+    <div style="margin-top:12px; display:flex; gap:8px; justify-content:space-between; align-items:center;">
+  <button id="resetAll" class="danger">全データ初期化</button>
+  <button id="closeStats" class="primary">閉じる</button>
+</div>
+  </div>
+</dialog>
+<dialog id="resetConfirmDlg">
+  <div class="dlg">
+    <h3>初期化しますか？</h3>
+    <p class="muted">売上履歴と集計が完全にリセットされ、元に戻せません。</p>
+    <div style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
+      <button id="resetNo">戻る</button>
+      <button id="resetYes" class="danger">はい</button>
     </div>
   </div>
 </dialog>
+
 
 <script>
 
@@ -155,19 +166,20 @@ const idb = {
       const req = indexedDB.open('mogi-pos', 1);
       req.onupgradeneeded = e => {
         const db = e.target.result;
-        db.createObjectStore('items', { keyPath: 'id' });
-        db.createObjectStore('orders', { keyPath: 'id' });
-        db.createObjectStore('meta', { keyPath: 'key' });
+        if (!db.objectStoreNames.contains('items')) db.createObjectStore('items', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('orders')) db.createObjectStore('orders', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
       };
       req.onsuccess = e => { idb.db = e.target.result; resolve(); };
       req.onerror = e => reject(e);
     });
   },
   tx(store, mode) { return idb.db.transaction(store, mode).objectStore(store); },
-  get(store, key) { return new Promise((res, rej)=>{ const r=idb.tx(store,'readonly').get(key); r.onsuccess=()=>res(r.result); r.onerror=rej; }); },
-  getAll(store) { return new Promise((res, rej)=>{ const r=idb.tx(store,'readonly').getAll(); r.onsuccess=()=>res(r.result); r.onerror=rej; }); },
-  put(store, val) { return new Promise((res, rej)=>{ const r=idb.tx(store,'readwrite').put(val); r.onsuccess=()=>res(); r.onerror=rej; }); },
-  del(store, key) { return new Promise((res, rej)=>{ const r=idb.tx(store,'readwrite').delete(key); r.onsuccess=()=>res(); r.onerror=rej; }); },
+  get(store, key) { return new Promise((res, rej)=>{ const r = idb.tx(store,'readonly').get(key); r.onsuccess=()=>res(r.result); r.onerror=rej; }); },
+  getAll(store) { return new Promise((res, rej)=>{ const r = idb.tx(store,'readonly').getAll(); r.onsuccess=()=>res(r.result || []); r.onerror=rej; }); },
+  put(store, val) { return new Promise((res, rej)=>{ const r = idb.tx(store,'readwrite').put(val); r.onsuccess=()=>res(); r.onerror=rej; }); },
+  del(store, key) { return new Promise((res, rej)=>{ const r = idb.tx(store,'readwrite').delete(key); r.onsuccess=()=>res(); r.onerror=rej; }); },
+  clear(store) { return new Promise((res, rej)=>{ const r = idb.tx(store,'readwrite').clear(); r.onsuccess=()=>res(); r.onerror=rej; }); }
 };
 
 const DEFAULT_ITEMS = [
@@ -334,7 +346,10 @@ function openManage(){
   const dlg = $('#manageDlg');
   buildManageList();
   dlg.showModal();
-  $('#addItemBtn').onclick = addItemFormRow;
+  
+  // タブレットでの自動フォーカスによるキーボード起動を抑制
+  if ('ontouchstart' in window) { setTimeout(()=>{ const ae=document.activeElement; if (ae && ae.tagName==='INPUT') ae.blur(); }, 0); }
+$('#addItemBtn').onclick = addItemFormRow;
   $('#saveAllItems').onclick = async ()=>{
     const rows = Array.from(document.querySelectorAll('#manageList .form-row'));
     for (const r of rows) {
@@ -539,6 +554,83 @@ async function renderStats(){
 $('#openStats').addEventListener('click', openStats);
 
 
+
+
+
+// ===== 初期化（売上・集計）ボタンの処理 =====
+document.addEventListener('DOMContentLoaded', ()=>{
+  try {
+    const resetBtn = $('#resetAll');
+    if (!resetBtn) return;
+    resetBtn.addEventListener('click', ()=> {
+      const dlg = $('#resetConfirmDlg');
+      if (!dlg) return;
+      dlg.showModal();
+      const noBtn = $('#resetNo');
+      const yesBtn = $('#resetYes');
+      if (noBtn) noBtn.onclick = ()=> dlg.close();
+      if (yesBtn) yesBtn.onclick = async ()=> {
+        try {
+          await idb.clear('orders');
+          await idb.put('meta', { key:'seq', value:1 });
+          await idb.put('meta', { key:'orderSeq', value:1 });
+          state.orderSeq = 1;
+          state.editingOrder = null;
+          await renderHistory();
+          await renderStats();
+          updateOrderNo();
+          state.cart = [];
+          const ci = $('#cashInput'); if (ci) ci.value = '';
+          renderCart();
+          dlg.close();
+          alert('初期化しました');
+        } catch (e) {
+          console.error(e);
+          alert('初期化に失敗しました');
+        }
+      };
+    });
+  } catch (e) {
+    console.error('reset wiring error', e);
+  }
+});
+
+// 追加: data-delボタンにテキスト「削除」を強制（キャッシュやスタイルの不整合対策）
+document.querySelectorAll('button[data-del]').forEach(b=>{
+  if (!b.textContent.trim()) b.textContent = '削除';
+});
+
+
+// ===== 初期化（売上・集計）ボタンの処理 =====
+$('#resetAll').addEventListener('click', ()=> {
+  const dlg = $('#resetConfirmDlg');
+  dlg.showModal();
+  $('#resetNo').onclick = ()=> dlg.close();
+  $('#resetYes').onclick = async ()=> {
+    try {
+      // 売上履歴の消去
+      await idb.clear('orders');
+      // 伝票番号シーケンスのリセット（両方のキーに配慮）
+      await idb.put('meta', { key:'seq', value:1 });
+      await idb.put('meta', { key:'orderSeq', value:1 });
+      state.orderSeq = 1;
+      state.editingOrder = null;
+      // 画面の更新
+      await renderHistory();
+      await renderStats();
+      updateOrderNo();
+      // 入力類をクリア
+      state.cart = [];
+      $('#cashInput').value = '';
+      renderCart();
+      dlg.close();
+      alert('初期化しました');
+    } catch (e) {
+      console.error(e);
+      alert('初期化に失敗しました');
+    }
+  };
+});
 
 </script>
 </body>
