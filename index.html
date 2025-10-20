@@ -3,22 +3,25 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>模擬店レジ（オフライン対応）</title>
+<title>推しの珈琲（オフライン対応）</title>
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="theme-color" content="#ffffff">
 <style>
   :root { --gap:12px; --btn:64px; --font:18px; }
   html,body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; font-size: var(--font); background:#f7f7f7; }
-  header { position: sticky; top:0; background:#fff; padding:12px; border-bottom:1px solid #eee; display:flex; gap:8px; align-items:center; z-index:10;}
+  header { position: sticky; top:0; background:#fff; padding:12px; border-bottom:1px solid #eee; display:flex; gap:12px; align-items:center; z-index:10;}
   header h1 { font-size:20px; margin:0; flex:1; }
   main { display:grid; grid-template-columns: 1.2fr 1fr; gap: var(--gap); padding: var(--gap); }
   @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
   .panel { background:#fff; border:1px solid #eee; border-radius:10px; padding:var(--gap); }
-  .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:var(--gap); min-height:180px; }
+  .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:var(--gap); }
   @media (max-width: 800px) { .grid { grid-template-columns: repeat(2, 1fr); } }
   button.item { height:var(--btn); font-size:18px; border:1px solid #ddd; border-radius:10px; background:#fafafa; white-space:pre-line; }
+  button.item.soldout { opacity:0.4; text-decoration: line-through; }
   table { width:100%; border-collapse: collapse; }
-  th,td { border-bottom:1px solid #eee; padding:8px; text-align:left; vertical-align: middle; }
+  th,td { border-bottom:1px solid #eee; padding:8px; text-align:left; }
   td.qty { width:130px; }
   .qtybtn { width:36px; height:36px; border:1px solid #ddd; border-radius:8px; background:#fff; }
   .muted { color:#888; font-size:14px; }
@@ -31,28 +34,37 @@
   .actions { display:flex; gap:8px; flex-wrap:wrap; }
   .primary { background:#111; color:#fff; border:1px solid #111; }
   .danger { background:#b00020; color:#fff; border:1px solid #b00020; }
-  dialog { border:none; border-radius:12px; padding:0; max-width:860px; width:90vw; }
+  .good { color:#0a7f2e; font-weight:600; }
+  .bad { color:#b00020; font-weight:600; }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; }
+  .chip { font-size:13px; padding:6px 10px; border:1px solid #ddd; border-radius:999px; background:#fff; }
+  .footer { padding:12px; font-size:13px; color:#666; }
+  dialog { border:none; border-radius:12px; padding:0; max-width:820px; width:90vw; }
   .dlg { padding:16px; }
   .dlg h3 { margin:0 0 8px; }
-  .form-row { display:grid; grid-template-columns: 1fr 120px; gap:8px; align-items:center; margin-bottom:6px;}
+  .form-row { display:grid; grid-template-columns: 1fr 120px 120px auto; gap:8px; align-items:center; margin-bottom:6px;}
   .form-row input { width:100%; padding:8px; font-size:16px; }
+  .form-row button { padding:8px; border:1px solid #ddd; border-radius:8px; background:#fff; }
   .right { text-align:right; }
-  .flex-end { display:flex; justify-content:flex-end; gap:8px; }
-  .tag { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#0a7f2e; }
+  .rowbtns { display:flex; gap:6px; flex-wrap:wrap; }
+
+  .bigbtn { font-size:22px; padding:10px 16px; height:48px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>模擬店レジ</h1>
+  <img id="brandLogo" alt="logo" src="logo.png" style="height:36px;margin-right:8px;"><h1 id="title">推しの珈琲</h1>
+  <button class="chip" id="exportCsv">CSV出力</button>
   <button class="chip" id="openManage">メニュー</button>
   <button class="chip" id="openHistory">売上履歴</button>
-  <button class="chip" id="openStats">販売状況</button>
-  <button class="chip" id="exportCsv">CSV出力</button>
+  <button class="chip" id="openStats">集計</button>
 </header>
 
 <main>
   <section class="panel">
-    <div class="muted">タップで追加</div>
+    <div class="toolbar">
+      <span class="muted">タップで追加</span>
+    </div>
     <div class="grid" id="itemsGrid"></div>
   </section>
 
@@ -71,7 +83,7 @@
     <div class="pay" style="margin-top:12px;">
       <input id="cashInput" type="number" inputmode="numeric" placeholder="受取金額（円）">
       <div class="keys">
-        <button data-cash="100">+100</button>
+        <button data-cash="100">+50</button> <button data-cash="100">+100</button>
         <button data-cash="500">+500</button>
         <button data-cash="1000">+1,000</button>
         <button id="exact">ぴったり</button>
@@ -82,20 +94,19 @@
       <div id="change" class="right" style="font-size:22px;font-weight:700;">¥0</div>
     </div>
     <div class="actions" style="margin-top:12px;">
-      <button id="checkout" class="primary">会計確定</button>
-      <button id="clearCart" class="danger">カート全クリア</button>
+      <button id="checkout" class="primary bigbtn">会計確定</button>
+      <button id="clearCart" class="danger bigbtn">カート全クリア</button>
     </div>
     <div class="muted" style="margin-top:8px;">注文番号：<span id="orderNo">--</span></div>
   </section>
 </main>
-
 <dialog id="manageDlg">
   <div class="dlg">
-    <h3>メニュー（名前と価格だけ編集）</h3>
+    <h3>メニュー編集</h3>
     <div id="manageList"></div>
-    <div class="flex-end" style="margin-top:12px;">
+    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+      <div style="flex:1"></div><button id="saveAllItems" class="primary">保存</button>
       <button id="addItemBtn">商品追加</button>
-      <button id="saveAllItems" class="primary">すべて保存</button>
       <button id="closeManage">閉じる</button>
     </div>
   </div>
@@ -103,372 +114,432 @@
 
 <dialog id="historyDlg">
   <div class="dlg">
-    <h3>売上履歴 <span class="muted" id="historySummary"></span></h3>
+    <h3>売上履歴</h3>
+    <div class="muted" id="historySummary"></div>
     <table style="margin-top:8px; width:100%;">
-      <thead><tr><th>時間</th><th>No</th><th>合計</th><th>明細</th><th>編集</th></tr></thead>
+      <thead><tr><th>時間</th><th>No</th><th>合計</th><th>明細</th><th>操作</th></tr></thead>
       <tbody id="historyBody"></tbody>
     </table>
-    <div class="flex-end" style="margin-top:12px;">
+    <div style="margin-top:12px;">
       <button id="closeHistory" class="primary">閉じる</button>
     </div>
   </div>
-</dialog>
 
-<dialog id="editOrderDlg">
-  <div class="dlg">
-    <h3>注文編集 <span id="editOrderNo"></span></h3>
-    <table id="editTable" style="width:100%;">
-      <thead><tr><th>商品</th><th>単価</th><th>数量</th><th class="right">小計</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <div class="flex-end" style="margin-top:10px;">
-      <div style="flex:1;text-align:right;">合計：<strong id="editTotal">¥0</strong></div>
-      <button id="saveOrder" class="primary">保存</button>
-      <button id="cancelEdit">閉じる</button>
-    </div>
-  </div>
 </dialog>
 
 <dialog id="statsDlg">
   <div class="dlg">
-    <h3>販売状況（品目別）</h3>
-    <table id="statsTable" style="width:100%;">
-      <thead><tr><th>商品</th><th class="right">個数</th><th class="right">売上</th></tr></thead>
-      <tbody></tbody>
+    <h3>売れた数・売上の集計</h3>
+    <div class="muted" id="statsSummary"></div>
+    <table style="margin-top:8px; width:100%;">
+      <thead><tr><th>商品</th><th class="right">数量</th><th class="right">売上</th></tr></thead>
+      <tbody id="statsBody"></tbody>
     </table>
-    <div class="flex-end" style="margin-top:12px;">
+    <div style="margin-top:12px; display:flex; justify-content:flex-end;">
       <button id="closeStats" class="primary">閉じる</button>
     </div>
   </div>
 </dialog>
 
 <script>
-(function(){
-  // フェイルセーフ：エラーを拾ってユーザーに見えるように
-  window.onerror = function(msg, src, line, col, err){ alert("読み込みエラー: " + msg); };
 
-  function $(sel){ return document.querySelector(sel); }
-  function fmt(n){ return '¥' + (n||0).toLocaleString('ja-JP'); }
-  function nowIso(){ return new Date().toISOString(); }
-  function nextOrderId(seq){ return String(seq).padStart(4,'0'); }
-  function sum(arr, f){ return arr.reduce((a,x)=> a+f(x), 0); }
+const $ = sel => document.querySelector(sel);
+const fmt = n => '¥' + (n||0).toLocaleString('ja-JP');
+const nowIso = () => new Date().toISOString();
+function nextOrderId(seq){ return String(seq).padStart(4,'0'); }
 
-  const idb = {
-    db: null,
-    open(){
-      return new Promise((resolve,reject)=>{
-        const req = indexedDB.open('mogi-pos', 2);
-        req.onupgradeneeded = e=>{
-          const db = e.target.result;
-          if (!db.objectStoreNames.contains('items')) db.createObjectStore('items',{keyPath:'id'});
-          if (!db.objectStoreNames.contains('orders')) db.createObjectStore('orders',{keyPath:'id'});
-          if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta',{keyPath:'key'});
-        };
-        req.onsuccess = e=>{ idb.db = e.target.result; resolve(); };
-        req.onerror = e=> reject(e);
-      });
-    },
-    tx(s,m){ return idb.db.transaction(s,m).objectStore(s); },
-    get(s,k){ return new Promise((res,rej)=>{ const r=idb.tx(s,'readonly').get(k); r.onsuccess=()=>res(r.result); r.onerror=rej; }); },
-    getAll(s){ return new Promise((res,rej)=>{ const r=idb.tx(s,'readonly').getAll(); r.onsuccess=()=>res(r.result); r.onerror=rej; }); },
-    put(s,v){ return new Promise((res,rej)=>{ const r=idb.tx(s,'readwrite').put(v); r.onsuccess=()=>res(); r.onerror=rej; }); },
-    del(s,k){ return new Promise((res,rej)=>{ const r=idb.tx(s,'readwrite').delete(k); r.onsuccess=()=>res(); r.onerror=rej; }); },
-  };
-
-  const DEFAULT_ITEMS = [
-    { id:'drip', name:'ドリップコーヒー', price:300, category:'ドリンク' },
-    { id:'tea',  name:'紅茶',             price:300, category:'ドリンク' },
-    { id:'affo', name:'アフォガード',     price:450, category:'スイーツ' },
-    { id:'latte',name:'ラテ',             price:380, category:'ドリンク' },
-  ];
-
-  const state = { items:[], cart:[], orderSeq:1, editingOrder:null };
-
-  async function init(){
-    await idb.open();
-    // 初回のみデフォルト商品を投入（さっきまでと同じ仕様）
-    const existing = await idb.getAll('items');
-    if (!existing || existing.length === 0){
-      for (const it of DEFAULT_ITEMS) await idb.put('items', it);
-    }
-    state.items = await idb.getAll('items');
-    const meta = await idb.get('meta','orderSeq');
-    state.orderSeq = (meta && meta.value) ? meta.value : 1;
-
-    renderItems();
-    renderCart();
-    updateOrderNo();
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js');
-    }
-
-    // ヘッダーボタン
-    $('#openManage').addEventListener('click', openManage);
-    $('#openHistory').addEventListener('click', openHistory);
-    $('#openStats').addEventListener('click', openStats);
-    $('#exportCsv').addEventListener('click', exportCsv);
-
-    // 会計側
-    $('#exact').addEventListener('click', ()=> { $('#cashInput').value = calcTotal(); updateChange(); });
-    document.querySelectorAll('[data-cash]').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const inc = parseInt(btn.dataset.cash,10);
-        const v = parseInt($('#cashInput').value||0,10);
-        $('#cashInput').value = (v+inc);
-        updateChange();
-      });
+const idb = {
+  db: null,
+  open() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('mogi-pos', 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        db.createObjectStore('items', { keyPath: 'id' });
+        db.createObjectStore('orders', { keyPath: 'id' });
+        db.createObjectStore('meta', { keyPath: 'key' });
+      };
+      req.onsuccess = e => { idb.db = e.target.result; resolve(); };
+      req.onerror = e => reject(e);
     });
-    $('#cashInput').addEventListener('input', updateChange);
-    $('#checkout').addEventListener('click', onCheckout);
-    $('#clearCart').addEventListener('click', ()=>{ state.cart=[]; renderCart(); });
+  },
+  tx(store, mode) { return idb.db.transaction(store, mode).objectStore(store); },
+  get(store, key) { return new Promise((res, rej)=>{ const r=idb.tx(store,'readonly').get(key); r.onsuccess=()=>res(r.result); r.onerror=rej; }); },
+  getAll(store) { return new Promise((res, rej)=>{ const r=idb.tx(store,'readonly').getAll(); r.onsuccess=()=>res(r.result); r.onerror=rej; }); },
+  put(store, val) { return new Promise((res, rej)=>{ const r=idb.tx(store,'readwrite').put(val); r.onsuccess=()=>res(); r.onerror=rej; }); },
+  del(store, key) { return new Promise((res, rej)=>{ const r=idb.tx(store,'readwrite').delete(key); r.onsuccess=()=>res(); r.onerror=rej; }); },
+};
+
+const DEFAULT_ITEMS = [
+  { id:'drip',   name:'ドリップコーヒー', price:300, category:'ドリンク', active:true, stock:null },
+  { id:'tea',    name:'紅茶',             price:300, category:'ドリンク', active:true, stock:null },
+  { id:'affo',   name:'アフォガード',     price:450, category:'スイーツ', active:true, stock:null },
+  { id:'latte',  name:'ラテ',             price:380, category:'ドリンク', active:true, stock:null },
+];
+
+const state = {
+  items: [], editingOrder:null,
+  cart: [],
+  orderSeq: 1,
+};
+
+(async function init(){
+  await idb.open();
+  const existing = await idb.getAll('items');
+  if (!existing || existing.length === 0) {
+    for (const it of DEFAULT_ITEMS) await idb.put('items', it);
+  }
+  state.items = await idb.getAll('items');
+  const meta = await idb.get('meta','orderSeq');
+  state.orderSeq = (meta && meta.value) ? meta.value : 1;
+
+  renderItems();
+  renderCart();
+  updateOrderNo();
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js');
   }
 
-  function renderItems(){
-    const wrap = $('#itemsGrid');
-    wrap.innerHTML = '';
-    state.items.forEach(it=>{
+  $('#exact').addEventListener('click', ()=> { $('#cashInput').value = calcTotal(); updateChange(); });
+  document.querySelectorAll('[data-cash]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const inc = parseInt(btn.dataset.cash,10);
+      const v = parseInt($('#cashInput').value||0,10);
+      $('#cashInput').value = (v+inc);
+      updateChange();
+    });
+  });
+  $('#cashInput').addEventListener('input', updateChange);
+  $('#checkout').addEventListener('click', onCheckout);
+  $('#clearCart').addEventListener('click', ()=>{ state.cart=[]; renderCart(); });
+
+  $('#openManage').addEventListener('click', openManage);
+  $('#openHistory').addEventListener('click', openHistory);
+  $('#exportCsv').addEventListener('click', exportCsv);
+})();
+
+function renderItems(){
+  const wrap = $('#itemsGrid');
+  wrap.innerHTML = '';
+  state.items
+    .filter(it=> it.active)
+    .forEach(it=>{
       const btn = document.createElement('button');
-      btn.className = 'item';
-      btn.textContent = it.name + '\n' + fmt(it.price);
+      btn.className = 'item' + (it.stock===0 ? ' soldout' : '');
+      btn.textContent = `${it.name}\n${fmt(it.price)}`;
       btn.addEventListener('click', ()=> addToCart(it));
       wrap.appendChild(btn);
     });
-  }
+}
 
-  function addToCart(it){
-    const line = state.cart.find(l=> l.id===it.id && l.price===it.price);
-    if (line) line.qty++;
-    else state.cart.push({ id:it.id, name:it.name, price:it.price, qty:1 });
-    renderCart();
+function addToCart(it){
+  if (it.stock===0) return;
+  const line = state.cart.find(l=> l.id===it.id);
+  if (line) line.qty++;
+  else state.cart.push({ id:it.id, name:it.name, price:it.price, qty:1 });
+  renderCart();
+}
+function changeQty(id,delta){
+  const line = state.cart.find(l=> l.id===id);
+  if (!line) return;
+  line.qty += delta;
+  if (line.qty<=0) state.cart = state.cart.filter(l=>l.id!==id);
+  renderCart();
+}
+function lineTotal(l){ return l.price * l.qty; }
+function calcSubtotal(){ return state.cart.reduce((a,l)=> a+lineTotal(l), 0); }
+function calcTotal(){ return calcSubtotal(); }
+function renderCart(){
+  const tbody = $('#cartTable tbody');
+  tbody.innerHTML='';
+  for (const l of state.cart) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${l.name}</td>
+      <td class="right">${fmt(l.price)}</td>
+      <td class="qty">
+        <button class="qtybtn" aria-label="minus">-</button>
+        <span style="display:inline-block; width:36px; text-align:center;">${l.qty}</span>
+        <button class="qtybtn" aria-label="plus">+</button>
+      </td>
+      <td class="right">${fmt(lineTotal(l))}</td>
+      <td class="right"><button class="qtybtn" aria-label="remove">×</button></td>
+    `;
+    const [minus, plus] = tr.querySelectorAll('.qtybtn'); // 修正：正しく minus/plus を取得
+    minus.addEventListener('click', ()=> changeQty(l.id,-1));
+    plus.addEventListener('click', ()=> changeQty(l.id,+1));
+    tr.querySelector('[aria-label="remove"]').addEventListener('click', ()=>{ state.cart = state.cart.filter(x=>x.id!==l.id); renderCart(); });
+    tbody.appendChild(tr);
   }
-  function changeQty(id,delta){
-    const line = state.cart.find(l=> l.id===id);
-    if (!line) return;
-    line.qty += delta;
-    if (line.qty<=0) state.cart = state.cart.filter(l=>l.id!==id);
-    renderCart();
-  }
-  function lineTotal(l){ return l.price * l.qty; }
-  function calcSubtotal(){ return state.cart.reduce((a,l)=> a+lineTotal(l), 0); }
-  function calcTotal(){ return calcSubtotal(); }
-  function renderCart(){
-    const tbody = $('#cartTable tbody');
-    tbody.innerHTML='';
-    for (const l of state.cart) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${l.name}</td>
-        <td class="right">${fmt(l.price)}</td>
-        <td class="qty">
-          <button class="qtybtn" data-act="minus">-</button>
-          <span style="display:inline-block; width:36px; text-align:center;">${l.qty}</span>
-          <button class="qtybtn" data-act="plus">+</button>
-        </td>
-        <td class="right">${fmt(lineTotal(l))}</td>
-        <td class="right"><button class="qtybtn" data-act="remove">×</button></td>
-      `;
-      tr.querySelector('[data-act="minus"]').addEventListener('click', ()=> changeQty(l.id,-1));
-      tr.querySelector('[data-act="plus"]').addEventListener('click', ()=> changeQty(l.id,+1));
-      tr.querySelector('[data-act="remove"]').addEventListener('click', ()=>{ state.cart = state.cart.filter(x=>x.id!==l.id); renderCart(); });
-      tbody.appendChild(tr);
-    }
-    $('#subtotal').textContent = fmt(calcSubtotal());
-    $('#discount').textContent = fmt(0);
-    $('#total').textContent = fmt(calcTotal());
-    updateChange();
-  }
-  function updateOrderNo(){ $('#orderNo').textContent = nextOrderId(state.orderSeq); }
-  function updateChange(){
-    const cash = parseInt($('#cashInput').value||0,10);
-    const chg = Math.max(0, cash - calcTotal());
-    $('#change').textContent = fmt(chg);
-    $('#change').className = chg>=0 ? 'right good' : 'right bad';
-  }
+  $('#subtotal').textContent = fmt(calcSubtotal());
+  $('#discount').textContent = fmt(0);
+  $('#total').textContent = fmt(calcTotal());
+  updateChange();
+}
+function updateOrderNo(){ $('#orderNo').textContent = nextOrderId(state.orderSeq); }
+function updateChange(){
+  const cash = parseInt($('#cashInput').value||0,10);
+  const chg = Math.max(0, cash - calcTotal());
+  $('#change').textContent = fmt(chg);
+  $('#change').className = chg>=0 ? 'right good' : 'right bad';
+}
 
-  async function onCheckout(){
-    if (state.cart.length===0) { alert('カートが空です'); return; }
-    const cash = parseInt($('#cashInput').value||0,10);
-    const total = calcTotal();
-    if (isNaN(cash) || cash < total) { alert('受取金額が不足しています'); return; }
 
-    const order = {
-      id: 'o-' + nowIso(),
-      orderNo: nextOrderId(state.orderSeq),
-      ts: nowIso(),
-      lines: state.cart.map(l=>({id:l.id, name:l.name, unit:l.price, qty:l.qty, line:l.price*l.qty})),
-      subtotal: total,
-      discount: 0,
-      total: total,
-      cash: cash,
-      change: cash-total,
-      edited: false
-    };
+async function onCheckout(){
+  const lines = state.cart.map(l=> ({ id:l.id, name:l.name, unit:l.price, qty:l.qty }));
+  const total = lines.reduce((s,l)=> s + l.unit*l.qty, 0);
+  if (lines.length===0) { alert('カートが空です'); return; }
+  const cash = parseInt($('#cashInput').value||0,10);
+  if (cash < total) { alert('受取金額が不足しています'); return; }
+  // meta for order sequence
+  const seq = (await idb.get('meta','seq')) || { key:'seq', value:1 };
+  let order;
+  if (state.editingOrder){
+    // 上書き更新：id/orderNoはそのまま
+    order = await idb.get('orders', state.editingOrder);
+    if (!order) { alert('編集対象の伝票が見つかりませんでした'); return; }
+    order.lines = lines;
+    order.total = total;
+    order.ts = nowIso();
+    order.edited = true;
     await idb.put('orders', order);
-
-    state.cart = [];
-    $('#cashInput').value = '';
-    updateChange();
-    renderCart();
-
-    state.orderSeq += 1;
-    await idb.put('meta', { key:'orderSeq', value: state.orderSeq });
-    updateOrderNo();
-
-    alert(`注文 #${order.orderNo} 会計完了。お釣り：${fmt(order.change)}`);
+    state.editingOrder = null;
+  } else {
+    const id = crypto.randomUUID();
+    const orderNo = nextOrderId(seq.value);
+    order = { id, orderNo, ts: nowIso(), lines, total };
+    await idb.put('orders', order);
+    seq.value += 1;
+    await idb.put('meta', seq);
   }
+  // 数を消費（管理がある場合のみ）
+  for (const l of lines){
+    const item = state.items.find(x=> x.id===l.id);
+    if (item && typeof item.stock === 'number' && item.stock!==null){
+      item.stock = Math.max(0, (item.stock||0) - l.qty);
+      await idb.put('items', item);
+    }
+  }
+  state.cart = [];
+  $('#cashInput').value='';
+  renderItems();
+  renderCart();
+  alert('会計を反映しました');
+}
 
-  // --- メニュー編集 ---
-  function openManage(){
-    buildManageList();
-    const dlg = $('#manageDlg'); dlg.showModal();
-    $('#addItemBtn').onclick = addItemFormRow;
-    $('#saveAllItems').onclick = saveAllItems;
-    $('#closeManage').onclick = ()=> dlg.close();
-  }
-  function buildManageList(){
-    const box = $('#manageList');
-    box.innerHTML = '';
-    state.items.forEach(it=> {
-      const row = document.createElement('div');
-      row.className='form-row';
-      row.innerHTML = `
-        <input value="${it.name}" data-k="name">
-        <input type="number" value="${it.price}" data-k="price">
-      `;
-      row.dataset.id = it.id;
-      box.appendChild(row);
-    });
-  }
-  async function saveAllItems(){
+
+
+function openManage(){
+  const dlg = $('#manageDlg');
+  buildManageList();
+  dlg.showModal();
+  $('#addItemBtn').onclick = addItemFormRow;
+  $('#saveAllItems').onclick = async ()=>{
     const rows = Array.from(document.querySelectorAll('#manageList .form-row'));
-    for (const row of rows){
-      const id = row.dataset.id;
-      const it = state.items.find(x=>x.id===id);
-      const name = row.querySelector('[data-k="name"]').value.trim();
-      const price = Math.max(0, parseInt(row.querySelector('[data-k="price"]').value||0,10));
-      it.name = name || it.name;
-      it.price = price;
+    for (const r of rows) {
+      const { it, name, price } = r._bind || {};
+      if (!it) continue;
+      it.name = (name.value||'').trim() || it.name;
+      it.price = Math.max(0, parseInt(price.value||0,10));
+      it.active = true; // アクティブ表記は廃止、常に販売可能として扱う
       await idb.put('items', it);
     }
     state.items = await idb.getAll('items');
     renderItems();
     alert('保存しました');
-  }
-  function addItemFormRow(){
-    const nid = 'i-' + Math.random().toString(36).slice(2,8);
-    const it = { id:nid, name:'新商品', price:0, category:'' };
-    state.items.push(it);
-    const box = $('#manageList');
-    const row = document.createElement('div');
-    row.className='form-row';
-    row.dataset.id = nid;
-    row.innerHTML = `<input value="${it.name}" data-k="name"><input type="number" value="${it.price}" data-k="price">`;
-    box.appendChild(row);
-  }
+  };
+  $('#closeManage').onclick = ()=> dlg.close();
+}
 
-  // --- 売上履歴/編集/販売状況（v3の仕様を踏襲） ---
-  async function openHistory(){
-    await renderHistory();
-    const dlg = $('#historyDlg'); dlg.showModal();
-    $('#closeHistory').onclick = ()=> dlg.close();
+function buildManageList(){
+  const box = $('#manageList');
+  box.innerHTML = '';
+  state.items.forEach(it=> box.appendChild(itemRow(it)));
+}
+
+
+function itemRow(it){
+  const row = document.createElement('div');
+  row.className='form-row';
+  row.innerHTML = `
+    <input value="${it.name}" aria-label="name">
+    <input type="number" value="${it.price}" aria-label="price">
+    <button class="danger" data-del>削除</button>
+  `;
+  const [name, price, delBtn] = row.querySelectorAll('input,input,button');
+  row._bind = { it, name, price };
+  delBtn.addEventListener('click', async ()=>{
+    if (!confirm(`商品「${it.name}」を削除します。よろしいですか？`)) return;
+    // DBから削除
+    await idb.del('items', it.id);
+    // stateから削除
+    state.items = (await idb.getAll('items'));
+    row.remove();
+    renderItems();
+  });
+  return row;
+}
+function addItemFormRow(){
+  const nid = 'i-' + Math.random().toString(36).slice(2,8);
+  const it = { id:nid, name:'新商品', price:0, category:'', active:true, stock:null };
+  state.items.push(it);
+  $('#manageList').appendChild(itemRow(it));
+}
+
+async function openHistory(){
+  const dlg = $('#historyDlg');
+  await renderHistory();
+  dlg.showModal();
+  $('#closeHistory').onclick = ()=> dlg.close();
+}
+
+async function renderHistory(){
+  const orders = (await idb.getAll('orders')).sort((a,b)=> a.ts<b.ts?1:-1);
+  const t = orders.reduce((s,o)=> s+o.total, 0);
+  $('#historySummary').textContent = `件数：${orders.length}　通算売上：${fmt(t)}`;
+  const body = $('#historyBody');
+  body.innerHTML = '';
+  for (const o of orders) {
+    const tr = document.createElement('tr');
+    const detail = o.lines.map(l=> `${l.name}×${l.qty}`).join('、');
+    const mark = o.edited ? ' ✅' : '';
+    tr.innerHTML = `<td>${new Date(o.ts).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}</td>
+      <td>${o.orderNo}${mark}</td><td class="right">${fmt(o.total)}</td><td>${detail}</td>
+      <td class="rowbtns">
+        <button data-act="edit">編集</button>
+      </td>`;
+    // Inline editor row
+    const editor = document.createElement('tr');
+    editor.style.display = 'none';
+    const editorTd = document.createElement('td');
+    editorTd.colSpan = 5;
+    editor.appendChild(editorTd);
+    const buildEditor = ()=>{
+      const wrap = document.createElement('div');
+      wrap.style.padding = '8px';
+      wrap.style.background = '#fafafa';
+      wrap.style.border = '1px solid #eee';
+      // Build editable lines
+      o.lines = o.lines || [];
+      const list = document.createElement('div');
+      for (let i=0;i<o.lines.length;i++){
+        const l = o.lines[i];
+        const row = document.createElement('div');
+        row.style.display='grid';
+        row.style.gridTemplateColumns='2fr 1fr 1fr auto';
+        row.style.gap='8px';
+        row.style.margin='6px 0';
+        row.innerHTML = `
+          <div>${l.name}</div>
+          <input type="number" min="0" value="${l.unit}" aria-label="unit">
+          <input type="number" min="0" value="${l.qty}" aria-label="qty">
+          <button data-del>削除</button>
+        `;
+        const [unit, qty, delBtn] = row.querySelectorAll('input, input, button');
+        delBtn.addEventListener('click', ()=>{ row.remove(); });
+        row._bind = { l, unit, qty };
+        list.appendChild(row);
+      }
+      wrap.appendChild(list);
+      const ctrl = document.createElement('div');
+      ctrl.style.display='flex'; ctrl.style.gap='8px'; ctrl.style.justifyContent='flex-end'; ctrl.style.marginTop='8px';
+      const saveBtn = document.createElement('button'); saveBtn.textContent='保存';
+      const cancelBtn = document.createElement('button'); cancelBtn.textContent='キャンセル';
+      ctrl.appendChild(cancelBtn); ctrl.appendChild(saveBtn);
+      wrap.appendChild(ctrl);
+      // Handlers
+      cancelBtn.addEventListener('click', ()=>{
+        editor.style.display='none';
+      });
+      saveBtn.addEventListener('click', async ()=>{
+        // Collect lines
+        const rows = Array.from(list.children);
+        const newLines = [];
+        let total = 0;
+        for (const r of rows){
+          const { l, unit, qty } = r._bind || {};
+          const u = Math.max(0, parseInt(unit.value||0,10));
+          const q = Math.max(0, parseInt(qty.value||0,10));
+          if (q===0) continue;
+          newLines.push({ id:l.id, name:l.name, unit:u, qty:q });
+          total += u*q;
+        }
+        o.lines = newLines;
+        o.total = total;
+        // o.ts は会計確定時刻のまま維持
+        o.edited = true;
+        await idb.put('orders', o); // 同じ id で上書き（旧伝票は増えない）
+        await renderHistory();
+      });
+      return wrap;
+    };
+    tr.querySelector('[data-act="edit"]').addEventListener('click', ()=>{
+      editorTd.innerHTML = '';
+      editorTd.appendChild(buildEditor());
+      editor.style.display = editor.style.display==='none' ? '' : 'none';
+    });
+    body.appendChild(tr);
+    body.appendChild(editor);
   }
-  async function renderHistory(){
-    const orders = (await idb.getAll('orders')).sort((a,b)=> a.ts<b.ts?1:-1);
-    const t = orders.reduce((s,o)=> s+o.total, 0);
-    $('#historySummary').textContent = `件数：${orders.length}　通算売上：${fmt(t)}`;
-    const body = $('#historyBody'); body.innerHTML = '';
-    for (const o of orders) {
-      const detail = o.lines.map(l=> `${l.name}×${l.qty}`).join('、');
-      const mark = o.edited ? '<span class="tag">✔ 編集済み</span>' : '';
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${new Date(o.ts).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}</td>
-        <td>${o.orderNo}</td><td class="right">${fmt(o.total)}</td><td>${detail} ${mark}</td>
-        <td><button data-act="edit">編集</button></td>`;
-      tr.querySelector('[data-act="edit"]').addEventListener('click', ()=> openEditOrder(o.id));
-      body.appendChild(tr);
+}
+
+
+async function exportCsv(){
+  const orders = await idb.getAll('orders');
+  const rows = [['time','orderNo','item','qty','unit','line','total','cash','change']];
+  for (const o of orders) {
+    for (const l of o.lines) {
+      rows.push([o.ts, o.orderNo, l.name, l.qty, l.unit, l.line, o.total, o.cash, o.change]);
     }
   }
-  async function openEditOrder(orderId){
-    const o = await idb.get('orders', orderId); if (!o) return;
-    state.editingOrder = o;
-    $('#editOrderNo').textContent = `#${o.orderNo}`;
-    const body = $('#editTable tbody'); body.innerHTML='';
-    for (const l of o.lines){
-      const tr = document.createElement('tr');
-      tr.dataset.itemId = l.id;
-      tr.innerHTML = `<td>${l.name}</td>
-        <td><input type="number" value="${l.unit}" data-k="unit" style="width:100px;"></td>
-        <td><input type="number" value="${l.qty}" data-k="qty" style="width:80px;"></td>
-        <td class="right" data-k="line">${fmt(l.unit*l.qty)}</td>
-        <td><button data-act="rm">×</button></td>`;
-      tr.querySelector('[data-k="unit"]').addEventListener('input', ()=> recalcEditRow(tr));
-      tr.querySelector('[data-k="qty"]').addEventListener('input', ()=> recalcEditRow(tr));
-      tr.querySelector('[data-act="rm"]').addEventListener('click', ()=> { tr.remove(); recalcEditTotal(); });
-      body.appendChild(tr);
+  const csv = rows.map(r=> r.map(x=>{
+    const s = (x??'').toString();
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `sales-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function openStats(){
+  const dlg = $('#statsDlg');
+  await renderStats();
+  dlg.showModal();
+  $('#closeStats').onclick = ()=> dlg.close();
+}
+async function renderStats(){
+  const orders = await idb.getAll('orders');
+  const map = new Map();
+  let tq=0, tt=0;
+  for (const o of orders){
+    for (const l of (o.lines||[])){
+      const k = l.id + '|' + l.name;
+      const cur = map.get(k) || { name:l.name, qty:0, sales:0 };
+      cur.qty += l.qty;
+      cur.sales += l.qty * l.unit;
+      map.set(k, cur);
+      tq += l.qty; tt += l.qty * l.unit;
     }
-    recalcEditTotal();
-    const dlg = $('#editOrderDlg'); dlg.showModal();
-    $('#cancelEdit').onclick = ()=> dlg.close();
-    $('#saveOrder').onclick = saveEditedOrder;
   }
-  function recalcEditRow(tr){
-    const unit = parseInt(tr.querySelector('[data-k="unit"]').value||0,10);
-    const qty = parseInt(tr.querySelector('[data-k="qty"]').value||0,10);
-    tr.querySelector('[data-k="line"]').textContent = fmt(unit*qty);
-    recalcEditTotal();
+  const arr = Array.from(map.values()).sort((a,b)=> b.qty - a.qty);
+  const body = $('#statsBody'); body.innerHTML='';
+  for (const r of arr){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.name}</td><td class="right">${r.qty}</td><td class="right">${fmt(r.sales)}</td>`;
+    body.appendChild(tr);
   }
-  function recalcEditTotal(){
-    const rows = Array.from(document.querySelectorAll('#editTable tbody tr'));
-    const total = rows.reduce((s, tr)=>{
-      const unit = parseInt(tr.querySelector('[data-k="unit"]').value||0,10);
-      const qty = parseInt(tr.querySelector('[data-k="qty"]').value||0,10);
-      return s + unit*qty;
-    }, 0);
-    $('#editTotal').textContent = fmt(total);
-  }
-  async function saveEditedOrder(){
-    const rows = Array.from(document.querySelectorAll('#editTable tbody tr'));
-    const lines = rows.map(tr=>{
-      const id = tr.dataset.itemId;
-      const name = tr.children[0].textContent;
-      const unit = parseInt(tr.querySelector('[data-k="unit"]').value||0,10);
-      const qty = parseInt(tr.querySelector('[data-k="qty"]').value||0,10);
-      return { id, name, unit, qty, line: unit*qty };
-    }).filter(x=> x.qty>0 && x.unit>=0);
-    const total = lines.reduce((s,l)=> s+l.line, 0);
-    const o = state.editingOrder;
-    o.lines = lines; o.total = total; o.subtotal = total; o.change = (o.cash||total) - total; o.edited = true;
-    await idb.put('orders', o);
-    $('#editOrderDlg').close();
-    await renderHistory();
-    alert('注文を更新しました');
-  }
+  $('#statsSummary').textContent = `合計数量：${tq}　合計売上：${fmt(tt)}`;
+}
 
-  async function openStats(){
-    const orders = await idb.getAll('orders');
-    const map = new Map();
-    for (const o of orders){ for (const l of o.lines){ const m = map.get(l.name)||{qty:0,rev:0}; m.qty+=l.qty; m.rev+=l.line; map.set(l.name,m); } }
-    const data = Array.from(map.entries()).map(([name,m])=>({name, qty:m.qty, rev:m.rev})).sort((a,b)=> b.qty-a.qty);
-    const tbody = $('#statsTable tbody'); tbody.innerHTML='';
-    for (const r of data){ const tr=document.createElement('tr'); tr.innerHTML = `<td>${r.name}</td><td class="right">${r.qty}</td><td class="right">${fmt(r.rev)}</td>`; tbody.appendChild(tr); }
-    $('#statsDlg').showModal(); $('#closeStats').onclick = ()=> $('#statsDlg').close();
-  }
+// Wire header button
+$('#openStats').addEventListener('click', openStats);
 
-  async function exportCsv(){
-    const orders = await idb.getAll('orders');
-    const rows = [['time','orderNo','item','qty','unit','line','total','cash','change','edited']];
-    for (const o of orders) {
-      for (const l of o.lines) rows.push([o.ts, o.orderNo, l.name, l.qty, l.unit, l.line, o.total, o.cash||'', o.change||'', o.edited?1:0]);
-    }
-    const csv = rows.map(r=> r.map(x=>{ const s=(x??'').toString(); return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; }).join(',')).join('\n');
-    const blob = new Blob([csv], {type:'text/csv'});
-    const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`sales-${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(url);
-  }
 
-  // DOMContentLoadedで初期化（より確実に）
-  window.addEventListener('DOMContentLoaded', ()=>{ init().catch(err=> alert('初期化エラー: ' + err)); });
-})();
+
 </script>
 </body>
 </html>
